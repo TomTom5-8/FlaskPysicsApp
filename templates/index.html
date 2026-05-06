@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang ='ja'>
+    <head>
+        <meta charset="utf-8">
+        <title>単振動シミュレーター</title>
+        <style>
+            #MyCanvas{
+                border: 2px solid #333;   /* 枠線: 2pxの実線、濃いグレー */
+                background-color: #fffdcc; /* 背景色: */
+                border-radius: 8px;      /* (オプション) 角を少し丸く */
+                box-shadow: 2px 2px 5px #ccc; /* (オプション) 軽い影をつけて立体感 */
+                display: block;              /* 中央寄せのためにブロック要素に */
+                margin: 10px auto;           /* 上下10px、左右中央寄せ */
+
+            }
+            #historyTable tbody tr{
+                cursor:pointer;
+                transition: background-color 0.2s;
+            }
+            #historyTable tbody tr:hover{
+                background-color: #e2f0ff;
+            }
+
+            
+        </style>
+    </head>
+    <body>
+        <h2>単振動シミュレーション</h2>
+        <div class="controls">
+            <label>ばね定数(k):<span id="k_val">1.0</span><input type="range" id="k" min="0.1"  max="10" step="0.1" value="1.0" oninput="updatePreview()"></label><br>
+            <label>減衰定数(ɤ):<span id="gamma_val">0.1</span><input type="range" id="gamma" min="0"  max="1" step="0.05" value="0.1" oninput="updatePreview()"></label><br>
+            <label>初期変位(x0):<span id="x0_val">10</span><input type="range" id="x0" min="-20"  max="20" step="1" value="10" oninput="updatePreview()"></label><br>
+            
+            <br>
+            <button id="startBtn" onclick="startSim()">シミュレーション開始</button>
+        </div><br><br>
+        <canvas id="MyCanvas" width="600" height="400"></canvas><br> 
+        <h3>シミュレーション履歴</h3>
+        <table border="1" id="historyTable" style="width:100%; text-align:center;">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>ばね定数(k)</th>
+                    <th>減衰定数(ɤ)</th>
+                    <th>初期変位(x0)</th>
+                    <th>実行日時</th>
+                </tr>  
+            </thead>
+            <tbody id="historyBody">
+
+            </tbody>
+        </table>
+        <p>こんにちは、{{ user.username }}さん！</p>
+        <a href="{{ url_for('logout') }}">ログアウトして終了する</a>
+        <script>
+            const canvas = document.getElementById("MyCanvas");
+            const ctx = canvas.getContext("2d");
+            let animationData = null;
+            let frameIndex = 0;
+            let animationId = null; // アニメーションを止めるためのID
+            let isPlaying = false;
+
+            function setSlidersEnabled(enabled){
+                const inputs =document.querySelectorAll('.controls input[type="range"]');
+                inputs.forEach(input =>{
+                    input.disabled = !enabled;
+                });
+                // 開始ボタンもアニメーション中は押せないようにするか、テキストを変える
+                document.getElementById("startBtn").disabled = !enabled;
+            }
+            // 数値を画面に表示し、停止中なら描画を更新する
+            async function updatePreview(){
+                const k = document.getElementById('k').value;
+                const gamma = document.getElementById('gamma').value;
+                const x0 = document.getElementById('x0').value;
+                // ラベルの数値を更新
+                document.getElementById('k_val').innerText = k;
+                document.getElementById('gamma_val').innerText = gamma;
+                document.getElementById('x0_val').innerText = x0;
+                // 停止中（isPlayingがfalse）の時だけ、初期状態を描画し直す
+                if (!isPlaying) {
+                    drawObject(parseFloat(x0)); 
+                }
+
+            }
+            // 描画ロジックを関数化（プレビューとアニメーションで共有）
+            function drawObject(xVal) {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                const centerX = 300;
+                const centerY = 200 + (xVal * 10);
+                // ばね
+                ctx.beginPath();
+                ctx.lineWidth = 5;
+                ctx.moveTo(centerX, 0);
+                ctx.lineTo(centerX, centerY);
+                ctx.strokeStyle = "red";
+                ctx.stroke();
+
+                // おもり
+                ctx.beginPath();
+                ctx.arc(centerX, centerY, 20, 0, Math.PI * 2);
+                ctx.fillStyle = "blue";
+                ctx.fill();
+            }
+           
+
+            async function startSim() {
+                isPlaying = true;
+                setSlidersEnabled(false); // スライダーを無効化
+
+                //スライダーの値を取得
+                const k = document.getElementById('k').value;
+                const gamma = document.getElementById('gamma').value;
+                const x0 = document.getElementById('x0').value;
+
+                const response = await fetch(`/calculate?k=${k}&gamma=${gamma}&x0=${x0}`);
+                animationData = await response.json();
+                // 計算が終わったら履歴をリロード
+                loadHistory();
+
+                //インデックスをリセットしてアニメーション開始
+                frameIndex = 0;
+                animate();
+            }
+
+            // ページ読み込み時に実行
+            window.onload = () => {
+                updatePreview();
+                loadHistory();
+            };
+            //1フレーム毎の描画ループ
+            function animate(){
+
+                if (!animationData || frameIndex >= animationData.t.length) {
+                    isPlaying = false;
+                    setSlidersEnabled(true); // 終わったらスライダーを有効化    
+                    return;
+                }
+                //画面をクリア
+                ctx.clearRect(0,0,canvas.width,canvas.height);
+                // 計算データ（変位 x）を取得
+                const xVal = animationData.x[frameIndex];
+                // 描画用の座標計算 (中心を(300, 200)とする)
+                const centerX = 300;
+                const centerY = 200 +(xVal*10); //10倍して見やすく
+                drawObject(animationData.x[frameIndex]);
+                frameIndex++;
+                animationId = requestAnimationFrame(animate);     
+            }
+
+            // 履歴を取得してテーブルを更新する関数
+            async function loadHistory() {
+                const response = await fetch('/history');
+                const data = await response.json();
+                const tbody = document.getElementById('historyBody');
+    
+                tbody.innerHTML = ''; 
+    
+                data.forEach(item => {
+                    // 行を作成し、クリックイベントにパラメータを渡す
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td>${item.id}</td>
+                        <td>${item.k}</td>
+                        <td>${item.gamma}</td>
+                        <td>${item.x0}</td>
+                        <td>${item.timestamp}</td>
+                    `;
+        
+                    // 行をクリックした時の処理
+                    row.onclick = () => restoreConfig(item.k, item.gamma, item.x0);
+        
+                    tbody.appendChild(row);
+                });
+            }
+            // 履歴から設定を復元する関数
+            function restoreConfig(k, gamma, x0) {
+                if (isPlaying) return; // シミュレーション中は復元不可
+
+                // スライダーの値を更新
+                document.getElementById('k').value = k;
+                document.getElementById('gamma').value = gamma;
+                document.getElementById('x0').value = x0;
+
+             // 数値ラベルとCanvas描画を更新
+                updatePreview();
+    
+                console.log(`設定を復元しました: k=${k}, gamma=${gamma}, x0=${x0}`);
+            }
+
+        </script>
+    </body>
+</html>
