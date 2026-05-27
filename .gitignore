@@ -1,0 +1,27 @@
+# Pythonのキャッシュファイル
+__pycache__/
+*.py[cod]
+*$py.class
+
+# 仮想環境（venv）
+venv/
+.venv/
+env/
+ENV/
+
+# データベース（現在リポジトリ内にある physics.db などのローカルDB用）
+*.db
+*.sqlite3
+
+# 環境変数・秘密情報（将来的にシークレットキーなどを切り出す場合用）
+.env
+.flaskenv
+
+# IDE・エディタの設定ファイル（必要に応じて追加）
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
